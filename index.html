@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stellar Evolution Simulation (HUD)</title>
+    <!-- 1. Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 2. Load "Inter" Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
+    
+    <!-- 3. Load three.js (Core Library) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- 4. Load OrbitControls (for zoom/rotate) -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <!-- 5. Define NEW Color Palette & Styles -->
+    <style>
+        :root {
+            --bg-deep-space: #0a091a; /* Deep purple/navy */
+            --text-primary: #f0f0f0; /* Soft white */
+            --text-secondary: #d9c2ff; /* Light lavender */
+            --accent-nebula: #a74d71; /* Magenta/Pink accent */
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-deep-space);
+            color: var(--text-primary);
+            overflow: hidden; /* Prevent scrolling */
+        }
+        
+        /* The 3D Canvas Container */
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* Overlay Screens (Title, End) */
+        .overlay-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(10, 9, 26, 0.9); /* --bg-deep-space with opacity */
+            backdrop-filter: blur(10px);
+            transition: opacity 0.3s ease-in-out;
+        }
+        .overlay-screen.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* HUD UI (Head-up Display) */
+        #hud-ui {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+            pointer-events: none; /* Let clicks pass through to canvas */
+            display: none; /* Hidden by default */
+            padding: 3rem; /* Increased from 2rem for bigger margins */
+            color: var(--text-primary);
+        }
+        
+        /* Make UI elements clickable */
+        #hud-ui > * {
+            pointer-events: auto;
+        }
+
+        /* Button Styles */
+        .btn {
+            @apply px-6 py-2 text-sm font-semibold rounded-lg transition-all duration-200; /* Reverted to rounded-lg */
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(5px);
+        }
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: var(--text-secondary);
+        }
+        .btn:disabled {
+            @apply opacity-30 cursor-not-allowed;
+        }
+
+        /* Title Screen Button */
+        .btn-start {
+            @apply px-10 py-3 text-lg font-bold rounded-lg; /* Reverted to rounded-lg */
+            background-color: var(--accent-nebula);
+            color: var(--text-primary);
+            border: none;
+        }
+        .btn-start:hover {
+            background-color: #c9688d;
+        }
+
+        /* Styling the new SVG logo to be white */
+        .header-logo {
+            filter: brightness(0) invert(1);
+            width: 220px; /* Increased from 180px */
+        }
+        .title-logo {
+            filter: brightness(0) invert(1);
+            width: 300px; /* Increased from 250px */
+            margin: 0 auto 1.5rem auto;
+        }
+        
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <!-- Screen 1: Title Screen Overlay -->
+    <div id="title-screen" class="overlay-screen">
+        <div class="text-center p-8 max-w-2xl mx-4">
+            <!-- New SVG Logo, inverted to white -->
+            <img src="https://www.iau.edu.sa/sites/all/themes/uod_base/logo.svg" 
+                 alt="Imam Abdulrahman Bin Faisal University Logo"
+                 class="title-logo"
+                 onerror="this.style.display='none'">
+            
+            <h1 class="text-4xl md:text-5xl font-bold text-white mb-4">
+                Simulation of Stellar Birth and Evolution
+            </h1>
+            
+            <p class="text-2xl text-secondary mb-8" style="color: var(--text-secondary);">
+                Astrophysics (Phys 503) <!-- Verified: Only Phys 503 -->
+            </p>
+            
+            <div class="text-lg text-gray-200">
+                <p class="font-semibold">Sukina Abbas Almisbaa</p>
+                <p>ID: 2220006665</p>
+            </div>
+            
+            <button id="start-btn" class="btn-start mt-10">
+                Start Simulation
+            </button>
+        </div>
+    </div>
+
+    <!-- Screen 2: Simulation 3D Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- Screen 2.5: HUD UI Overlay -->
+    <div id="hud-ui">
+        
+        <!-- Top Left: Logo & Stage Counter -->
+        <div class="absolute top-12 left-12"> <!-- Updated padding from p-8 to p-12 -->
+            <img src="https://www.iau.edu.sa/sites/all/themes/uod_base/logo.svg" 
+                 alt="IAU Logo" 
+                 class="header-logo mb-4">
+            <p id="stage-counter" class="text-lg font-semibold" style="color: var(--text-secondary);">
+                STAGE 01 / 14
+            </p>
+        </div>
+
+        <!-- Top Right: Controls -->
+        <div class="absolute top-12 right-12 flex gap-3"> <!-- Updated padding -->
+            <button id="prev-btn" class="btn">Previous</button>
+            <button id="next-btn" class="btn">Next</button>
+        </div>
+
+        <!-- Bottom Left: Stage Info -->
+        <div class="absolute bottom-12 left-12 max-w-lg"> <!-- Updated padding -->
+            <h2 id="stage-title" class="text-4xl font-bold text-white mb-3">
+                Molecular Cloud
+            </h2>
+            <p id="stage-properties" class="text-md font-mono mb-4" style="color: var(--text-secondary);">
+                Temp: ~10 K | Size: >10 Light-years
+            </p>
+            <p id="stage-description" class="text-md text-gray-300 leading-relaxed max-w-md">
+                A vast, cold, and dense cloud of molecular hydrogen and dust. It's the "stellar nursery" where stars are born.
+            </p>
+        </div>
+        
+        <!-- Bottom Right: User Info -->
+        <div class="absolute bottom-12 right-12 text-right text-sm text-gray-400"> <!-- Updated padding -->
+            <p class="font-semibold">Sukina Abbas Almisbaa</p>
+            <p>2220006665</p>
+            <p class="mt-1" style="color: var(--text-secondary);">Phys 503</p> <!-- Verified: Only Phys 503 -->
+        </div>
+
+    </div>
+    
+    <!-- Screen 3: End Screen Overlay -->
+    <div id="end-screen" class="overlay-screen hidden">
+        <div class="text-center p-8 max-w-lg mx-4">
+            <h1 class="text-4xl font-bold text-white mb-4">
+                Simulation Complete
+            </h1>
+            <p class="text-lg mb-8" style="color: var(--text-secondary);">
+                You have completed all 14 stages of stellar evolution.
+            </p>
+            <div class="flex gap-4 justify-center">
+                <button id="restart-btn" class="btn-start">
+                    Restart Simulation
+                </button>
+                <button id="back-to-title-btn" class="btn">
+                    Back to Title
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // ========================================
+        //          STAGES DATA
+        // ========================================
+        const stages = [
+            { title: "Stage 1: Molecular Cloud", properties: "Temp: ~10 K | Size: >10 Light-years", description: "A vast, cold, and dense cloud of molecular hydrogen and dust. It's the 'stellar nursery' where stars are born. These clouds are stable until a disturbance, like a supernova shockwave, triggers collapse.", createFunc: "createMolecularCloud" },
+            { title: "Stage 2: Gravitational Collapse", properties: "Temp: 10 K -> 100 K | Density: Increasing", description: "A region of the cloud begins to collapse under its own gravity, fragmenting into dense cores. As the core contracts, its center heats up.", createFunc: "createCollapse" },
+            { title: "Stage 3: Protostar", properties: "Temp: ~2,000-3,000 K | Shrouded", description: "A hot, dense core forms at the center, surrounded by a rotating protoplanetary disk that 'feeds' it, causing it to grow in mass.", createFunc: "createProtostar" },
+            { title: "Stage 4: T-Tauri Phase", properties: "Temp: ~4,000 K | Features: Strong winds, jets", description: "The protostar continues to contract, but fusion has not begun. It enters the T-Tauri phase, characterized by strong stellar winds and bipolar jets.", createFunc: "createTTauri" },
+            { title: "Stage 5: Main Sequence (Sun-like)", properties: "Temp (Core): ~15 million K | Status: Stable Fusion", description: "The core reaches ~15 million K, igniting hydrogen-to-helium fusion. The outward pressure balances gravity, creating a stable star.", createFunc: "createMainSequenceSun" },
+            { title: "Stage 6: Red Giant", properties: "Temp (Surface): Cooler | Size: Enormous", description: "The star exhausts its core hydrogen. The core contracts, igniting hydrogen fusion in a shell, pushing the outer layers to expand and cool.", createFunc: "createRedGiant" },
+            { title: "Stage 7: Helium Flash", properties: "Temp (Core): ~100 million K | Event: Rapid Ignition", description: "At ~100 million K, helium fusion (burning to carbon) ignites explosively in a 'Helium Flash', re-stabilizing the star.", createFunc: "createHeliumFlash" },
+            { title: "Stage 8: Horizontal Branch", properties: "Temp: Hotter | Size: Smaller", description: "After the flash, the star stably fuses helium in its core and hydrogen in a shell. It shrinks and becomes hotter.", createFunc: "createHorizontalBranch" },
+            { title: "Stage 9: Asymptotic Giant Branch (AGB)", properties: "Temp (Surface): Cool | Luminosity: Very High", description: "The star exhausts its core helium. It now burns helium and hydrogen in two shells, becoming very unstable and pulsating, losing mass.", createFunc: "createAGB" },
+            { title: "Stage 10: Planetary Nebula", properties: "Core: Exposed | Shell: Expanding, glowing", description: "The star's outer layers are ejected into space, forming a beautiful, glowing shell of gas. The hot, naked core is left behind.", createFunc: "createPlanetaryNebula" },
+            { title: "Stage 11: White Dwarf", properties: "Temp: Extremely High | Size: Earth-sized", description: "The exposed core is now a White Dwarf, an incredibly dense remnant. It no longer fuses and just slowly cools down over trillions of years.", createFunc: "createWhiteDwarf" },
+            { title: "Stage 12: Main Sequence (High-Mass)", properties: "Temp (Core): >20 million K | Mass: >8x Sun", description: "A high-mass star is much hotter, fusing hydrogen via the CNO cycle. It burns through its fuel in only millions of years.", createFunc: "createMainSequenceMassive" },
+            { title: "Stage 13: Red Supergiant", properties: "Size: Solar-system sized | Core: Fusing heavy elements", description: "The star becomes a Red Supergiant, fusing elements up to iron in an 'onion-like' layered core.", createFunc: "createRedSupergiant" },
+            { title: "Stage 14: Type II Supernova", properties: "Event: Catastrophic Explosion | Remnant: Neutron Star/Black Hole", description: "Iron cannot be fused to create energy. The core collapses in seconds, rebounding into a massive Supernova explosion.", createFunc: "createSupernova" }
+        ];
+
+        // ========================================
+        //          THREE.JS GLOBALS
+        // ========================================
+        let scene, camera, renderer, controls, container, currentObject;
+        let clock = new THREE.Clock();
+        let threeInitialized = false;
+
+        // ========================================
+        //          THREE.JS SCENE CREATORS
+        // ========================================
+        
+        function clearScene() {
+            if (currentObject) {
+                scene.remove(currentObject);
+                // TODO: Add proper disposal of geometry/material
+            }
+        }
+
+        function createMolecularCloud() {
+            const particleCount = 5000;
+            const particles = new THREE.BufferGeometry();
+            const positions = [];
+            
+            for (let i = 0; i < particleCount; i++) {
+                const theta = Math.random() * 2 * Math.PI;
+                const phi = Math.acos(2 * Math.random() - 1);
+                const r = 10 * Math.random() * Math.random(); 
+                
+                const x = r * Math.sin(phi) * Math.cos(theta);
+                const y = r * Math.sin(phi) * Math.sin(theta);
+                const z = r * Math.cos(phi);
+                positions.push(x, y, z);
+            }
+            particles.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            const material = new THREE.PointsMaterial({
+                color: 0xd9c2ff, // Lavender
+                size: 0.1,
+                transparent: true,
+                opacity: 0.5
+            });
+            currentObject = new THREE.Points(particles, material);
+            currentObject.update = () => { currentObject.rotation.y += 0.001; };
+            scene.add(currentObject);
+            camera.position.z = 15;
+        }
+
+        function createCollapse() {
+            createMolecularCloud(); // Start with cloud
+            let scale = 1;
+            currentObject.update = () => {
+                currentObject.rotation.y += 0.005;
+                if (scale > 0.2) {
+                    scale -= 0.001;
+                    currentObject.scale.set(scale, scale, scale);
+                }
+            };
+        }
+
+        function createProtostar() {
+            const group = new THREE.Group();
+            
+            const starGeo = new THREE.SphereGeometry(1, 32, 32);
+            const starMat = new THREE.MeshBasicMaterial({ color: 0xffa500, fog: false });
+            const star = new THREE.Mesh(starGeo, starMat);
+            group.add(star);
+            
+            const light = new THREE.PointLight(0xffa500, 2, 10);
+            group.add(light);
+            
+            const diskGeo = new THREE.RingGeometry(1.5, 5, 64);
+            const diskMat = new THREE.MeshBasicMaterial({ color: 0x8B4513, side: THREE.DoubleSide, opacity: 0.7, transparent: true });
+            const disk = new THREE.Mesh(diskGeo, diskMat);
+            disk.rotation.x = Math.PI / 2.1;
+            group.add(disk);
+
+            currentObject = group;
+            currentObject.update = () => { currentObject.rotation.y += 0.005; };
+            scene.add(currentObject);
+            camera.position.z = 10;
+        }
+        
+        function createTTauri() {
+            createProtostar(); // Start with protostar
+            
+            const jetGeo = new THREE.CylinderGeometry(0.1, 0.05, 20, 32);
+            const jetMat = new THREE.MeshBasicMaterial({ color: 0xa74d71, transparent: true, opacity: 0.8 }); // Nebula Accent
+            
+            const jet1 = new THREE.Mesh(jetGeo, jetMat);
+            jet1.position.y = 10;
+            const jet2 = new THREE.Mesh(jetGeo, jetMat);
+            jet2.position.y = -10;
+            
+            currentObject.add(jet1);
+            currentObject.add(jet2);
+
+            currentObject.update = () => { currentObject.rotation.y += 0.005; };
+        }
+
+        function createMainSequenceSun() {
+            const starGeo = new THREE.SphereGeometry(3, 32, 32);
+            const starMat = new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0xffff00, emissiveIntensity: 0.8 });
+            currentObject = new THREE.Mesh(starGeo, starMat);
+            
+            const light = new THREE.PointLight(0xffffff, 1, 100);
+            currentObject.add(light);
+            
+            currentObject.update = () => { currentObject.rotation.y += 0.005; };
+            scene.add(currentObject);
+            camera.position.z = 10;
+        }
+
+        function createRedGiant() {
+            const starGeo = new THREE.SphereGeometry(8, 32, 32);
+            const starMat = new THREE.MeshStandardMaterial({ color: 0xff4500, emissive: 0xff4500, emissiveIntensity: 0.5 });
+            currentObject = new THREE.Mesh(starGeo, starMat);
+            
+            const light = new THREE.PointLight(0xff4500, 1, 50);
+            currentObject.add(light);
+            
+            currentObject.update = () => { currentObject.rotation.y += 0.001; };
+            scene.add(currentObject);
+            camera.position.z = 20;
+        }
+
+        function createHeliumFlash() {
+            createRedGiant();
+            const flash = new THREE.PointLight(0xffffff, 0, 100);
+            currentObject.add(flash);
+            let flashActive = true;
+            let startTime = clock.getElapsedTime();
+            currentObject.update = () => {
+                currentObject.rotation.y += 0.001;
+                if (flashActive) {
+                    flash.intensity = Math.sin((clock.getElapsedTime() - startTime) * 10) * 5 + 5; // Pulsing light
+                    if (clock.getElapsedTime() - startTime > 3) flashActive = false;
+                } else {
+                    flash.intensity = 0;
+                }
+            };
+        }
+        
+        function createHorizontalBranch() {
+             const starGeo = new THREE.SphereGeometry(2.5, 32, 32);
+            const starMat = new THREE.MeshStandardMaterial({ color: 0xaaaaff, emissive: 0xaaaaff, emissiveIntensity: 0.8 });
+            currentObject = new THREE.Mesh(starGeo, starMat);
+            
+            const light = new THREE.PointLight(0xaaaaff, 1, 100);
+            currentObject.add(light);
+            
+            currentObject.update = () => { currentObject.rotation.y += 0.005; };
+            scene.add(currentObject);
+            camera.position.z = 10;
+        }
+
+        function createAGB() {
+            createRedGiant(); // Similar to Red Giant
+            currentObject.update = () => {
+                currentObject.rotation.y += 0.001;
+                const scale = 1 + Math.sin(clock.getElapsedTime()) * 0.1; // Pulsing scale
+                currentObject.scale.set(scale, scale, scale);
+            };
+        }
+
+        function createPlanetaryNebula() {
+            const group = new THREE.Group();
+            
+            const starGeo = new THREE.SphereGeometry(0.5, 32, 32);
+            const starMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1 });
+            const star = new THREE.Mesh(starGeo, starMat);
+            group.add(star);
+            
+            const light = new THREE.PointLight(0xffffff, 1, 100);
+            group.add(light);
+            
+            // Nebula Shell
+            const nebulaGeo = new THREE.SphereGeometry(5, 32, 32);
+            const nebulaMat = new THREE.MeshStandardMaterial({ 
+                color: 0xa74d71, // Nebula Accent
+                emissive: 0xa74d71,
+                emissiveIntensity: 0.5,
+                transparent: true, 
+                opacity: 0.4,
+                side: THREE.DoubleSide
+            });
+            const nebula = new THREE.Mesh(nebulaGeo, nebulaMat);
+            
+            const nebula2 = nebula.clone();
+            nebula2.material = nebula.material.clone();
+            nebula2.material.color.set(0xd9c2ff); // Lavender
+            nebula2.material.emissive.set(0xd9c2ff);
+            nebula2.scale.set(0.7, 0.7, 0.7);
+            
+            group.add(nebula);
+            group.add(nebula2);
+            
+            currentObject = group;
+            currentObject.update = () => {
+                currentObject.rotation.y += 0.002;
+                nebula.scale.x = nebula.scale.y = nebula.scale.z += 0.001;
+                nebula.material.opacity = Math.max(0, 0.4 - nebula.scale.x * 0.05);
+            };
+            scene.add(currentObject);
+            camera.position.z = 15;
+        }
+
+        function createWhiteDwarf() {
+            const starGeo = new THREE.SphereGeometry(0.2, 32, 32);
+            const starMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1 });
+            currentObject = new THREE.Mesh(starGeo, starMat);
+            
+            const light = new THREE.PointLight(0xffffff, 2, 100);
+            currentObject.add(light);
+            
+            currentObject.update = () => {};
+            scene.add(currentObject);
+            camera.position.z = 5;
+        }
+        
+        function createMainSequenceMassive() {
+            const starGeo = new THREE.SphereGeometry(5, 32, 32);
+            const starMat = new THREE.MeshStandardMaterial({ color: 0x00aaff, emissive: 0x00aaff, emissiveIntensity: 0.8 });
+            currentObject = new THREE.Mesh(starGeo, starMat);
+            
+            const light = new THREE.PointLight(0x00aaff, 1, 100);
+            currentObject.add(light);
+            
+            currentObject.update = () => { currentObject.rotation.y += 0.005; };
+            scene.add(currentObject);
+            camera.position.z = 15;
+        }
+        
+        function createRedSupergiant() {
+            const starGeo = new THREE.SphereGeometry(12, 32, 32);
+            const starMat = new THREE.MeshStandardMaterial({ color: 0xff2000, emissive: 0xff2000, emissiveIntensity: 0.5 });
+            currentObject = new THREE.Mesh(starGeo, starMat);
+            
+            const light = new THREE.PointLight(0xff2000, 1, 60);
+            currentObject.add(light);
+            
+            currentObject.update = () => { currentObject.rotation.y += 0.001; };
+            scene.add(currentObject);
+            camera.position.z = 30;
+        }
+
+        function createSupernova() {
+            const explosion = new THREE.Group();
+            
+            const shellGeo = new THREE.SphereGeometry(1, 32, 32);
+            const shellMat = new THREE.MeshStandardMaterial({
+                color: 0xffa500,
+                emissive: 0xffa500,
+                transparent: true,
+                opacity: 0.8
+            });
+            const shell = new THREE.Mesh(shellGeo, shellMat);
+            explosion.add(shell);
+            
+            const light = new THREE.PointLight(0xffffff, 5, 100);
+            explosion.add(light);
+            
+            currentObject = explosion;
+            let scale = 0.1;
+            currentObject.update = () => {
+                scale += 0.05;
+                currentObject.scale.set(scale, scale, scale);
+                shell.material.opacity = Math.max(0, 0.8 - scale * 0.05);
+                light.intensity = Math.max(0, 5 - scale * 0.5);
+            };
+            
+            scene.add(currentObject);
+            camera.position.z = 30;
+        }
+
+        const stageCreators = {
+            createMolecularCloud, createCollapse, createProtostar, createTTauri,
+            createMainSequenceSun, createRedGiant, createHeliumFlash, createHorizontalBranch,
+            createAGB, createPlanetaryNebula, createWhiteDwarf,
+            createMainSequenceMassive, createRedSupergiant, createSupernova
+        };
+
+        // ========================================
+        //          THREE.JS INIT & ANIMATE
+        // ========================================
+        
+        function initThree() {
+            if (threeInitialized) return; // Prevent double init
+            
+            container = document.getElementById('canvas-container');
+            
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.z = 15;
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+            
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5); 
+            scene.add(ambientLight);
+            
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false;
+            controls.minDistance = 2;
+            controls.maxDistance = 50;
+            controls.enablePan = false; // Simpler control
+
+            window.addEventListener('resize', onWindowResize, false);
+            
+            animate();
+            threeInitialized = true;
+        }
+
+        function onWindowResize() {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update(); 
+            if (currentObject && currentObject.update) {
+                currentObject.update();
+            }
+            renderer.render(scene, camera);
+        }
+
+        // ========================================
+        //          APPLICATION LOGIC
+        // ========================================
+        let currentStage = 0;
+        
+        const titleScreen = document.getElementById('title-screen');
+        const hudUI = document.getElementById('hud-ui');
+        const endScreen = document.getElementById('end-screen');
+        
+        const startBtn = document.getElementById('start-btn');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const restartBtn = document.getElementById('restart-btn');
+        const backToTitleBtn = document.getElementById('back-to-title-btn');
+        
+        const stageCounter = document.getElementById('stage-counter');
+        const stageTitle = document.getElementById('stage-title');
+        const stageProperties = document.getElementById('stage-properties');
+        const stageDescription = document.getElementById('stage-description');
+
+        function updateUI() {
+            const stage = stages[currentStage];
+            
+            // Update info panel
+            stageCounter.textContent = `STAGE ${String(currentStage + 1).padStart(2, '0')} / ${stages.length}`;
+            stageTitle.textContent = stage.title;
+            stageProperties.textContent = stage.properties;
+            stageDescription.textContent = stage.description;
+            
+            // Update navigation buttons
+            prevBtn.disabled = (currentStage === 0);
+            
+            // NEW: Change "Next" button text on last stage
+            if (currentStage === stages.length - 1) {
+                nextBtn.textContent = "Finish";
+            } else {
+                nextBtn.textContent = "Next";
+            }
+            
+            // Update 3D Scene
+            clearScene();
+            const createFunc = stageCreators[stage.createFunc];
+            if (createFunc) {
+                createFunc();
+            }
+            
+            controls.reset();
+        }
+
+        // --- Event Listeners ---
+        startBtn.addEventListener('click', () => {
+            titleScreen.classList.add('hidden');
+            hudUI.style.display = 'block';
+            
+            initThree(); // Initialize 3D scene
+            
+            currentStage = 0; // Reset to first stage
+            updateUI();
+        });
+        
+        nextBtn.addEventListener('click', () => {
+            if (currentStage < stages.length - 1) {
+                currentStage++;
+                clock.start(); // Reset clock for animations
+                updateUI();
+            } else {
+                // Last stage, show end screen
+                hudUI.style.display = 'none';
+                endScreen.classList.remove('hidden');
+            }
+        });
+
+        prevBtn.addEventListener('click', () => {
+            if (currentStage > 0) {
+                currentStage--;
+                clock.start(); // Reset clock for animations
+                updateUI();
+            }
+        });
+        
+        restartBtn.addEventListener('click', () => {
+            endScreen.classList.add('hidden');
+            hudUI.style.display = 'block';
+            currentStage = 0;
+            updateUI();
+        });
+        
+        backToTitleBtn.addEventListener('click', () => {
+            endScreen.classList.add('hidden');
+            titleScreen.classList.remove('hidden');
+            // We can stop rendering 3D here if we want to save resources
+            // Or just leave it running in background
+        });
+
+    </script>
+</body>
+</html>
